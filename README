@@ -1,0 +1,16 @@
+MQTT to XMPP Gateway
+
+Maps from MQTT topics specified by a client to XMPP nodes that the gateway creates.
+
+Important information:
+    Clients using the gateway need to publish a message to the gatway's
+    MQTT topic in the following form:
+    	name: clientName
+	input: clientInputTopic01 clientInputTopic02
+	output: clientOutputTopic01 clientOutputTopic02
+	status: clientstatusTopic01
+	description: clientDescriptionTopic01
+
+As yet the status and description fields are unused but will be made use of in the future.
+
+All fields are strictly optional and the error checking surrounding the formatting of these documents is somewhat lackluster.
