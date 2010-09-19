@@ -4,6 +4,8 @@ Created on 26/08/2010
 @author: maus
 '''
 
+import optparse
+
 from MQTT import MQTTProtocol
 from twisted.internet.protocol import ClientFactory
 from twisted.application.service import Service
@@ -35,6 +37,7 @@ class MQTTListener(MQTTProtocol):
 
     def connackReceived(self, status):
         self.subscribe(self.factory.service.gatewayRegTopic)
+        print 'connect'
         
     def processMessages(self):
         map = dict([(v,k) for k,v in self.factory.service.topicBindings])
@@ -145,14 +148,11 @@ class XMPPPublishSubscriber(PubSubClient):
         
         # Publish the messages in the MQTT buffer to their respective XMPP nodes
         map = dict(self.parent.parent.topicBindings)
-        buffer = self.parent.parent.mqttMessageBuffer
         
-        for topic, message in buffer:
+        for topic, message in self.parent.parent.mqttMessageBuffer:
             if topic in map:
                 self.publish(self.parent.parent.xmppServerJID, map[topic], [Item(None, message)]
                              ).addErrback(self.printError)
-                
-        buffer = []
         
         reactor.callLater(5, self.processMessages)
         
@@ -184,35 +184,51 @@ class GatewayService(Service):
     mqttMessageBuffer = []
     xmppMessageBuffer = []
     
-    def __init__(self, gatewayId, gatewayRegTopic, xmppServerJID, mqttFactory, xmppClient ):
+    def __init__(self, gatewayId, gatewayRegTopic, xmppServer, gatewayJID, gatewayPassword, 
+                 mqttBroker):
+        
         self.gatewayId = gatewayId
         self.gatewayRegTopic = gatewayRegTopic
-        self.xmppServerJID = xmppServerJID
+        self.xmppServerJID = jid.JID(xmppServer)
         
-        self.mqttFactory = mqttFactory
-        self.mqttFactory.service = self
+        self.mqttFactory = MQTTListenerFactory(self)
         
-        self.xmppClient = xmppClient
+        self.xmppClient = XMPPClient(jid.JID(gatewayJID), gatewayPassword)
+        XMPPPublishSubscriber().setHandlerParent(self.xmppClient)
         self.xmppClient.parent = self
-    
+        
+        reactor.connectTCP(mqttBroker, 1883, self.mqttFactory)
+        reactor.connectTCP(xmppServer, 5222, self.xmppClient.factory)
+        
+        print 'Got ere'
+        
         
     def addDevice(self, device):
         self.devices.append(device)
         
 def main():
     
-    mqttFactory = MQTTListenerFactory()
-    xmppClient = XMPPClient(jid.JID("ceit_sensors@talkr.im/GATEWAY"), 'avrud0')
-    xmppClient.logTraffic = True
-    XMPPPublishSubscriber().setHandlerParent(xmppClient)
-
-    gateway = GatewayService('gateway', 'gateway/registration', jid.JID('pubsub.talkr.im'), 
-                             mqttFactory, xmppClient)
+    parser = optparse.OptionParser(usage='Insert usage string here')
+    parser.add_option('-m', '--mqttbroker', dest='mqttBroker', default=None, type='string',
+                       help='Specify the MQTT broker to run on')
+    parser.add_option('-x', '--xmppserver', dest='xmppServer', default=None, type='string',
+                       help='Specify the XMPP pubsub server to run on')
+    parser.add_option('-i', '--gatewayid', dest='gatewayId', default=None, type='string',
+                       help='Specify the ID of the gateway on the MQTT and XMPP networks')
+    parser.add_option('-t', '--registrationtopic', dest='registrationTopic', default=None,
+                       type='string', help='Specify the MQTT topic that the gateway will listen for registration messages on')
+    parser.add_option('-j', '--gatewayjid', dest='gatewayJid', default=None, type='string',
+                       help='Specify the JID used to publish and subscribe to XMPP messages')
+    parser.add_option('-p', '--gatewaypassword', dest='gatewayPassword', default=None, type='string',
+                       help='Specify the password used to connect using the specified JID')
     
-    reactor.connectTCP('192.168.1.150', 1883, gateway.mqttFactory)
-    reactor.connectTCP('pubsub.talkr.im', 5222, gateway.xmppClient.factory)
+    (options, args) = parser.parse_args()
+    
+    # CHECK THIS AT SOME POINT
+    gateway = GatewayService(options.gatewayId, options.registrationTopic, options.xmppServer, 
+                             options.gatewayJid, options.gatewayPassword, options.mqttBroker)
     
     reactor.run()
-
+    
 if __name__ == '__main__':
     main()
