@@ -161,10 +161,10 @@ class XMPPPublishSubscriber(PubSubClient):
         
         for topic, message in self.parent.parent.mqttMessageBuffer:
             if topic in map:
-		log.msg('Publishing output message\nNode: %s, Message: %s' % (map[topic], message)) 
+                log.msg('Publishing output message\nNode: %s, Message: %s' % (map[topic], message)) 
                 self.publish(self.parent.parent.xmppServerJID, map[topic], [Item(None, message)]
                              ).addErrback(self.printError)
-		self.parent.parent.mqttMessageBuffer.remove((topic, message))
+                self.parent.parent.mqttMessageBuffer.remove((topic, message))
                 
         
         reactor.callLater(5, self.processMessages)
@@ -209,13 +209,13 @@ class GatewayService(Service):
         self.xmppClient = XMPPClient(jid.JID(gatewayJID), gatewayPassword)
         XMPPPublishSubscriber().setHandlerParent(self.xmppClient)
         self.xmppClient.parent = self
-	self.xmppClient.logTraffic = True
+        self.xmppClient.logTraffic = True
         
         reactor.connectTCP(mqttBroker, 1883, self.mqttFactory)
         reactor.connectTCP(xmppServer, 5222, self.xmppClient.factory)
         
 
-	log.msg('Starting gateway\nGateway ID: %s\nGateway registration topic: %s\nXMPP Server: %s\n' % (gatewayId, gatewayRegTopic, self.xmppServerJID))
+        log.msg('Starting gateway\nGateway ID: %s\nGateway registration topic: %s\nXMPP Server: %s\n' % (gatewayId, gatewayRegTopic, self.xmppServerJID))
     
         
     def addDevice(self, device):
