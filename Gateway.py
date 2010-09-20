@@ -1,8 +1,13 @@
 '''
 Created on 26/08/2010
 
-@author: maus
+@author: Adam Rudd
 '''
+
+# TODO:
+# 1. Fix the MQTTProtocol and PubSubClients so that their pointers to
+#    the gateway service's message buffers and binding lists are direct
+#    rather than self.parent.parent.x and self.factory.service.x
 
 from MQTT import MQTTProtocol
 from twisted.internet.protocol import ClientFactory
@@ -14,7 +19,7 @@ from wokkel.client import XMPPClient
 from twisted.words.protocols.jabber import jid
 from twisted.python import log
 
-    
+# Do some more with this class.    
 class Device:
     name = ""
     topicMap = {}
@@ -23,17 +28,39 @@ class Device:
         self.name = name
         self.topicMap = kwargs
     
+# Parser utility
+class __ParseElementFromRawXml(object):
+    def __call__(self, xml):
+        self.result = None
+        def onStart(el):
+            self.result = el
+        def onEnd():
+            pass
+        def onElement(el):
+            self.result.addChild(el)
+
+        parser = domish.elementStream()
+        parser.DocumentStartEvent = onStart
+        parser.ElementEvent = onElement
+        parser.DocumentEndEvent = onEnd
+        tmp = domish.Element(("", "s"))
+        tmp.addRawXml(xml)
+        parser.parse(tmp.toXml())
+        return self.result.firstChildElement()
+
+parseElementFromRawXml = __ParseElementFromRawXml()
 
 class MQTTListener(MQTTProtocol):
     
     def connectionMade(self):
-	log.msg('MQTT Connected')
-        self.connect(self.factory.service.gatewayId, keepalive=1000000)
-        reactor.callLater(2, self.pingreq)
+        log.msg('MQTT Connected')
+        self.connect(self.factory.service.gatewayId, keepalive=60000)
+        # TODO: make these constants configurable
+        reactor.callLater(60000//1000, self.pingreq)
         reactor.callLater(5, self.processMessages)
     
     def pingrespReceived(self):
-	log.msg('Ping received from MQTT broker')
+        log.msg('Ping received from MQTT broker')
         reactor.callLater(2, self.pingreq)
 
     def connackReceived(self, status):
@@ -95,7 +122,7 @@ class MQTTListener(MQTTProtocol):
         
         else:
             # Received a publish on an output topic
-	    log.msg('Output message received\nTopic: %s, Message%s' % (topic, message))
+            log.msg('Output message received\nTopic: %s, Message%s' % (topic, message))
             self.factory.service.mqttMessageBuffer.append((topic, message))
 
 class MQTTListenerFactory(ClientFactory):
@@ -117,7 +144,7 @@ class XMPPPublishSubscriber(PubSubClient):
         for item in event.items:
             if item.name == 'item':
                 for child in item.children:
-		    log.msg('Input message received\nNode: %s, Message: %s' % (event.nodeIdentifier, str(child.toXml())))
+                    log.msg('Input message received\nNode: %s, Message: %s' % (event.nodeIdentifier, str(child.toXml())))
                     self.parent.parent.xmppMessageBuffer.append((event.nodeIdentifier,
                                                                   str(child.toXml())))
                 
@@ -141,19 +168,20 @@ class XMPPPublishSubscriber(PubSubClient):
                     # TODO: make a heirachy of nodes... maybe?
                     # TODO: set their expected XML namespace to EEML's
                     # TODO: WATCH OUT FOR NAMING CONFLICTS!
-		    # TODO: log the creation or failed creation of the nodes
+                    # TODO: log the creation or failed creation of the nodes
                     service = self.parent.parent.xmppServerJID
-		    log.msg('Creating node: %s' % node)
+                    log.msg('Creating node: %s' % node)
                     self.createNode(service, node, {'pubsub#type':''},
                                     self.parent.jid).addErrback(self.printError)
             
             # Subscribe to the input nodes
             for node in inputNodeList:
-		log.msg('Subscribing to node: %s' % node)
+                log.msg('Subscribing to node: %s' % node)
                 self.subscribe(self.parent.parent.xmppServerJID, node,
                      self.parent.jid).addErrback(self.printError)
         
         # Empty the new device list
+        # TODO: do something better than this if we're wanting to watch for statuses
         self.parent.parent.devices = []        
         
         # Publish the messages in the MQTT buffer to their respective XMPP nodes
@@ -161,9 +189,24 @@ class XMPPPublishSubscriber(PubSubClient):
         
         for topic, message in self.parent.parent.mqttMessageBuffer:
             if topic in map:
-                log.msg('Publishing output message\nNode: %s, Message: %s' % (map[topic], message)) 
-                self.publish(self.parent.parent.xmppServerJID, map[topic], [Item(None, message)]
+                # Parse the incoming message into a domish.Element
+                # TODO: Check if it belongs to the appropriate namespace (http://www.eeml.org/xsd/005)
+                # IMPORTANT NOTE: This does not accept XML documents that begin with an XML
+                #                 declaration (i.e. <?xml version="1.0 ?>)
+                #                 This is a bug in twisted.
+                messageElement = None
+                try:
+                    messageElement = parseElementFromRawXml(message)
+                except:
+                    log.err()
+                    messageElement = None
+                
+                # If it properly parsed, publish it    
+                if messageElement is not None:
+                    log.msg('Publishing output message\nNode: %s, Message: %s' % (map[topic], messageElement.toXml())) 
+                    self.publish(self.parent.parent.xmppServerJID, map[topic], [Item(None, messageElement)]
                              ).addErrback(self.printError)
+                # Remove the message regardless
                 self.parent.parent.mqttMessageBuffer.remove((topic, message))
                 
         
