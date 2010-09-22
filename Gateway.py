@@ -13,7 +13,7 @@ from MQTT import MQTTProtocol
 from twisted.internet.protocol import ClientFactory
 from twisted.application.service import Service
 from twisted.internet import reactor
-from twisted.words.xish.domish import Element
+from twisted.words.xish import domish
 from wokkel.pubsub import PubSubClient, Item
 from wokkel.client import XMPPClient
 from twisted.words.protocols.jabber import jid
@@ -43,9 +43,7 @@ class __ParseElementFromRawXml(object):
         parser.DocumentStartEvent = onStart
         parser.ElementEvent = onElement
         parser.DocumentEndEvent = onEnd
-        tmp = domish.Element(("", "s"))
-        tmp.addRawXml(xml)
-        parser.parse(tmp.toXml())
+        parser.parse(xml)
         return self.result.firstChildElement()
 
 parseElementFromRawXml = __ParseElementFromRawXml()
@@ -64,22 +62,23 @@ class MQTTListener(MQTTProtocol):
         reactor.callLater(2, self.pingreq)
 
     def connackReceived(self, status):
-	if status == 0:
-	    self.subscribe(self.factory.service.gatewayRegTopic)
-	else:
-	    log.msg('Connecting to MQTT broker failed')
-        
-    def processMessages(self):
-        map = dict([(v,k) for k,v in self.factory.service.topicBindings])
-        for node, message in self.factory.service.xmppMessageBuffer:
-            if node in map:
-                # TODO: Possible memory leak here when messages arrive to nodes that don't have a 
-                # binding. Shouldn't happen but let's make a note of it
-		log.msg('Publishing message to MQTT - Topic %s, Message %s' % (map[node], message))	
-                self.publish(map[node], message)
-                self.factory.service.xmppMessageBuffer.remove((node, message))
-        reactor.callLater(5, self.processMessages)
-        
+        if status == 0:
+            self.subscribe(self.factory.service.gatewayRegTopic)
+        else:
+            log.msg('Connecting to MQTT broker failed')
+            
+        def processMessages(self):
+            map = dict([(v,k) for k,v in self.factory.service.topicBindings])
+            for node, message in self.factory.service.xmppMessageBuffer:
+                if node in map:
+                    # TODO: Possible memory leak here when messages arrive to nodes that don't have a 
+                    # binding. Shouldn't happen but let's make a note of it
+                    log.msg('Publishing message to MQTT - Topic %s, Message %s' % (map[node], message))	
+                    self.publish(map[node], message)
+                    self.factory.service.xmppMessageBuffer.remove((node, message))
+            
+            reactor.callLater(5, self.processMessages)
+            
     def publishReceived(self, topic, message, qos, dup, retain, messageId):
         if topic == self.factory.service.gatewayRegTopic:
             # REGISTRATION REQUEST
@@ -96,7 +95,7 @@ class MQTTListener(MQTTProtocol):
             # status: statusTopicOne statusTopicTwo
             # description: descriptionTopicOne
             
-	    log.msg('Registration request received:\n %s' % message)
+            log.msg('Registration request received:\n %s' % message)
             map = {}
             for line in message.split('\n'):
                 k, v = line.split(': ')
@@ -133,7 +132,7 @@ class MQTTListenerFactory(ClientFactory):
 
 class XMPPPublishSubscriber(PubSubClient):
     def connectionInitialized(self):
-	log.msg('XMPP initialized')
+        log.msg('XMPP initialized')
         PubSubClient.connectionInitialized(self)
         reactor.callLater(5, self.processMessages)
         
@@ -193,7 +192,8 @@ class XMPPPublishSubscriber(PubSubClient):
                 # TODO: Check if it belongs to the appropriate namespace (http://www.eeml.org/xsd/005)
                 # IMPORTANT NOTE: This does not accept XML documents that begin with an XML
                 #                 declaration (i.e. <?xml version="1.0 ?>)
-                #                 This is a bug in twisted.
+                #                 
+                # WAIT NO IT WORKS FINE!
                 messageElement = None
                 try:
                     messageElement = parseElementFromRawXml(message)
@@ -254,6 +254,7 @@ class GatewayService(Service):
         self.xmppClient.parent = self
         self.xmppClient.logTraffic = True
         
+        # Should connect outside of the service
         reactor.connectTCP(mqttBroker, 1883, self.mqttFactory)
         reactor.connectTCP(xmppServer, 5222, self.xmppClient.factory)
         
