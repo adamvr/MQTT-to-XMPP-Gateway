@@ -44,7 +44,7 @@ class __ParseElementFromRawXml(object):
         parser.ElementEvent = onElement
         parser.DocumentEndEvent = onEnd
         parser.parse(xml)
-        return self.result.firstChildElement()
+        return self.result
 
 parseElementFromRawXml = __ParseElementFromRawXml()
 
