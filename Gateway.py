@@ -67,17 +67,17 @@ class MQTTListener(MQTTProtocol):
         else:
             log.msg('Connecting to MQTT broker failed')
             
-        def processMessages(self):
-            map = dict([(v,k) for k,v in self.factory.service.topicBindings])
-            for node, message in self.factory.service.xmppMessageBuffer:
-                if node in map:
-                    # TODO: Possible memory leak here when messages arrive to nodes that don't have a 
-                    # binding. Shouldn't happen but let's make a note of it
-                    log.msg('Publishing message to MQTT - Topic %s, Message %s' % (map[node], message))	
-                    self.publish(map[node], message)
-                    self.factory.service.xmppMessageBuffer.remove((node, message))
+    def processMessages(self):
+        map = dict([(v,k) for k,v in self.factory.service.topicBindings])
+        for node, message in self.factory.service.xmppMessageBuffer:
+            if node in map:
+                # TODO: Possible memory leak here when messages arrive to nodes that don't have a 
+                # binding. Shouldn't happen but let's make a note of it
+                log.msg('Publishing message to MQTT - Topic %s, Message %s' % (map[node], message))	
+                self.publish(map[node], message)
+                self.factory.service.xmppMessageBuffer.remove((node, message))
             
-            reactor.callLater(5, self.processMessages)
+        reactor.callLater(5, self.processMessages)
             
     def publishReceived(self, topic, message, qos, dup, retain, messageId):
         if topic == self.factory.service.gatewayRegTopic:
