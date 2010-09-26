@@ -19,6 +19,8 @@ from wokkel.client import XMPPClient
 from twisted.words.protocols.jabber import jid
 from twisted.python import log
 
+import DeviceDescriptor
+
 # Do some more with this class.    
 class Device:
     name = ""
@@ -254,7 +256,7 @@ class GatewayService(Service):
         self.xmppClient.parent = self
         self.xmppClient.logTraffic = True
         
-        # Should connect outside of the service
+        # TODO: Should connect outside of the service
         reactor.connectTCP(mqttBroker, 1883, self.mqttFactory)
         reactor.connectTCP(xmppServer, 5222, self.xmppClient.factory)
         
