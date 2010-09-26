@@ -51,17 +51,18 @@ class __ParseElementFromRawXml(object):
 parseElementFromRawXml = __ParseElementFromRawXml()
 
 class MQTTListener(MQTTProtocol):
+    pingPeriod = 60000
     
     def connectionMade(self):
         log.msg('MQTT Connected')
-        self.connect(self.factory.service.gatewayId, keepalive=60000)
+        self.connect(self.factory.service.gatewayId, keepalive=self.pingPeriod)
         # TODO: make these constants configurable
-        reactor.callLater(60000//1000, self.pingreq)
+        reactor.callLater(self.pingPeriod//1000, self.pingreq)
         reactor.callLater(5, self.processMessages)
     
     def pingrespReceived(self):
         log.msg('Ping received from MQTT broker')
-        reactor.callLater(2, self.pingreq)
+        reactor.callLater(self.pingPeriod//1000, self.pingreq)
 
     def connackReceived(self, status):
         if status == 0:
