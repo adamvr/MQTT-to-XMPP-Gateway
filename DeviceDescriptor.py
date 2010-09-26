@@ -1,7 +1,10 @@
 '''
 Created on 26/09/2010
 
-@author: maus
+This is a set of utility classes used to generate device description xml.
+This is neither standardized nor very good!
+
+@author: Adam Rudd
 '''
 
 from twisted.words.xish.domish import Element

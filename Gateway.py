@@ -136,6 +136,17 @@ class XMPPPublishSubscriber(PubSubClient):
     def connectionInitialized(self):
         log.msg('XMPP initialized')
         PubSubClient.connectionInitialized(self)
+        # Create the gateway root node and registry
+        self.gatewayRootId = self.parent.parent.gatewayId
+        self.registryId = self.gatewayRootId + '/registry'
+        
+        self.createNode(self.parent.parent.xmppServerJID, self.gatewayRootId, 
+                        {'pubsub#node_type':'collection'}).addErrback(self.printError)
+        # TODO: make maxitems configurable
+        self.createNode(self.parent.parent.xmppServerJID, self.registryId,
+                        {'pubsub#node_type':'leaf', 'pubsub#collection':self.gatewayRootId,
+                         'pubsub#max_items':'100'}
+                        ).addErrback(self.printError)
         reactor.callLater(5, self.processMessages)
         
     def printError(self, error):
@@ -152,37 +163,53 @@ class XMPPPublishSubscriber(PubSubClient):
     def processMessages(self):
         # Check if there are any new devices to make nodes for
         for dev in self.parent.parent.devices:
-            # Create each input and output node
-            inputNodeList = []
-            for topicType in dev.topicMap.keys():
-                for topic in dev.topicMap[topicType]:
-                    # Form the node's ID
-                    node = unicode(self.parent.parent.gatewayId + '/' + dev.name + '/' + topic)
-                    # Create a binding between the node ID and the MQTT topic
-                    self.parent.parent.topicBindings.append((topic, node))
-                    # Add the node to a list of topics to subscribe to
-                    if topicType == 'input':
-                        inputNodeList.append(node)
-                 
-                    # Create the node
-                    # TODO: add error checking callbacks to this
-                    # TODO: make a heirachy of nodes... maybe?
-                    # TODO: set their expected XML namespace to EEML's
-                    # TODO: WATCH OUT FOR NAMING CONFLICTS!
-                    # TODO: log the creation or failed creation of the nodes
-                    service = self.parent.parent.xmppServerJID
-                    log.msg('Creating node: %s' % node)
-                    self.createNode(service, node, {'pubsub#type':''},
-                                    self.parent.jid).addErrback(self.printError)
+            # Create the root node for this device
             
-            # Subscribe to the input nodes
+            # TODO: hilarious as this is to look at, it should probably be in a
+            #       helper function.
+            rootNodeName = unicode(hex(abs(hash(dev.name))))
+            self.createNode(self.parent.parent.xmppServerJID, rootNodeName,
+                            {'pubsub#node_type':'collection', 
+                             'pubsub#collection': self.gatewayRootId}
+                            ).addErrback(self.printError)
+            # Create the description document
+            description = DeviceDescriptor.Device(dev.name, rootNodeName)
+            inputNodeList = []
+            for type in dev.topicMap.keys():
+                for topic in dev.topicMap[type]:
+                    # Form the node's id
+                    node = unicode(hex(abs(hash(dev.name + '/' + topic))))
+                    
+                    # Add the node to this node's description
+                    # TODO: might want to check if all of these values are sane
+                    description.addFeed(DeviceDescriptor.Feed(topic, type, node))
+                    
+                    # If it's an input topic add the node id to the 
+                    # list of nodes to subscribe to
+                    if type == 'input':
+                        inputNodeList.append(node)
+                    
+                    
+                    # Create a binding from this MQTT topic to the node
+                    # we're going to create
+                    self.parent.parent.topicBindings.append((topic, node))
+                    
+                    log.msg('Creating node: %s' % node)
+                    # Create the node
+                    self.createNode(self.parent.parent.xmppServerJID, node,
+                                    {'pubsub#collection': rootNodeName}
+                                    ).addErrback(self.printError)
+            
             for node in inputNodeList:
                 log.msg('Subscribing to node: %s' % node)
-                self.subscribe(self.parent.parent.xmppServerJID, node,
-                     self.parent.jid).addErrback(self.printError)
-        
-        # Empty the new device list
-        # TODO: do something better than this if we're wanting to watch for statuses
+                self.subscribe(self.parent.parent.xmppServerJID, node, self.parent.jid
+                               ).addErrback(self.printError)
+                               
+            # Publish the device description to the registry
+            log.msg('Publishing registration:\n %s' % description.toXml())
+            self.publish(self.parent.parent.xmppServerJID, self.registryId,
+                        [Item(None, description)]).addErrback(self.printError)
+                     
         self.parent.parent.devices = []        
         
         # Publish the messages in the MQTT buffer to their respective XMPP nodes
@@ -290,7 +317,8 @@ def main():
     # CHECK THIS AT SOME POINT
     gateway = GatewayService(options.gatewayId, options.registrationTopic, options.xmppServer, 
                              options.gatewayJid, options.gatewayPassword, options.mqttBroker)
-    log.startLogging(open('./loglog', 'w'))
+    import sys
+    log.startLogging(sys.stdout)
     
     reactor.run()
 
