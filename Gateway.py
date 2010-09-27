@@ -137,6 +137,7 @@ class XMPPPublishSubscriber(PubSubClient):
     def connectionInitialized(self):
         log.msg('XMPP initialized')
         PubSubClient.connectionInitialized(self)
+        
         # Create the gateway root node and registry
         self.gatewayRootId = self.parent.parent.gatewayId
         self.registryId = self.gatewayRootId + '/registry'
@@ -157,9 +158,10 @@ class XMPPPublishSubscriber(PubSubClient):
         for item in event.items:
             if item.name == 'item':
                 for child in item.children:
-                    log.msg('Input message received\nNode: %s, Message: %s' % (event.nodeIdentifier, str(child.toXml())))
+                    log.msg('''Input message received 
+                    Node: %s, Message: %s''' % (event.nodeIdentifier, str(child)))
                     self.parent.parent.xmppMessageBuffer.append((event.nodeIdentifier,
-                                                                  str(child.toXml())))
+                                                                  str(child)))
                 
     def processMessages(self):
         # Check if there are any new devices to make nodes for
