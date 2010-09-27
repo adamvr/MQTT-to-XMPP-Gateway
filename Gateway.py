@@ -155,13 +155,18 @@ class XMPPPublishSubscriber(PubSubClient):
         log.msg(str(error)) 
 
     def itemsReceived(self, event):
+        # TODO: this tends to choke if things are published from pidgin
+        #       it has to do with pidgin introducing spurious whitespace
+        #       and that not getting parsed away. A way around this would be
+        #       to parse the xml that comes out of the items or ignoring
+        #       whitespace items.
         for item in event.items:
             if item.name == 'item':
                 for child in item.children:
                     log.msg('''Input message received 
-                    Node: %s, Message: %s''' % (event.nodeIdentifier, str(child)))
+                    Node: %s, Message: %s''' % (event.nodeIdentifier, str(child.toXml())))
                     self.parent.parent.xmppMessageBuffer.append((event.nodeIdentifier,
-                                                                  str(child)))
+                                                                  str(child.toXml())))
                 
     def processMessages(self):
         # Check if there are any new devices to make nodes for
@@ -211,7 +216,7 @@ class XMPPPublishSubscriber(PubSubClient):
             # Publish the device description to the registry
             log.msg('Publishing registration:\n %s' % description.toXml())
             self.publish(self.parent.parent.xmppServerJID, self.registryId,
-                        [Item(None, description)]).addErrback(self.printError)
+                        [Item(rootNodeName, description)]).addErrback(self.printError)
                      
         self.parent.parent.devices = []        
         
